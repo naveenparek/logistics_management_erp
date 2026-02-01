@@ -188,11 +188,33 @@ exports.getEntries = (req, res) => {
 
 
 // get single entry by id
+
 exports.getEntryById = (req, res) => {
   const entryId = req.params.id;
-  const sql = "SELECT * FROM logistic_entries WHERE id = ?";
+  let sql = "";
+  let values = [entryId];
 
-  db.query(sql, [entryId], (err, results) => {    
+  if (req.user.role === "SUPER_ADMIN" || req.user.role === "DEV_ADMIN") {
+    // Admin / Dev can see who created the entry
+    sql = `
+      SELECT 
+        le.*,
+        u.name AS created_by_name,
+        u.email AS created_by_email
+      FROM logistic_entries le
+      JOIN users u ON le.user_id = u.id
+      WHERE le.id = ?
+    `;
+  } else {
+    // Staff can only see entry data
+    sql = `
+      SELECT *
+      FROM logistic_entries
+      WHERE id = ?
+    `;
+  }
+
+  db.query(sql, values, (err, results) => {
     if (err) {
       console.error("Fetch entry error:", err);
       return res.status(500).json({ message: "Failed to fetch entry" });
