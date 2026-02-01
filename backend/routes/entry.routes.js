@@ -8,6 +8,8 @@ const upload = require("../middleware/upload.middleware");
  * Logistic Entry Routes
  * All routes require authentication
  */
+// POST get entrie by id
+router.post("/:id", authMiddleware, entryController.getEntryById);
 
 // POST /api/entries - Create new entry (with optional image upload)
 router.post("/", authMiddleware, upload.single("image"), entryController.createEntry);

@@ -186,6 +186,28 @@ exports.getEntries = (req, res) => {
   });
 };
 
+
+// get single entry by id
+exports.getEntryById = (req, res) => {
+  const entryId = req.params.id;
+  const sql = "SELECT * FROM logistic_entries WHERE id = ?";
+
+  db.query(sql, [entryId], (err, results) => {    
+    if (err) {
+      console.error("Fetch entry error:", err);
+      return res.status(500).json({ message: "Failed to fetch entry" });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ message: "Entry not found" });
+    }
+
+    res.json(results[0]);
+  });
+};
+
+
+
 /**
  * Update Entry Controller
  * Updates an existing entry
