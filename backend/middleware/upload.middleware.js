@@ -1,20 +1,30 @@
 const multer = require("multer");
+const cloudinary = require("../config/cloudinary");
 
-/**
- * Multer Configuration for Image Upload
- * Stores uploaded files in the 'uploads/' directory
- * Generates unique filenames using timestamp
- */
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, "uploads/");
+//  Node v22 + ESM-compatible import
+const CloudinaryStorage = require("multer-storage-cloudinary").default;
+
+const storage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "logistics-erp",
+    allowed_formats: ["jpg", "jpeg", "png", "gif", "webp"],
+    transformation: [{ width: 1000, height: 1000, crop: "limit" }],
   },
-  filename: (req, file, cb) => {
-    const uniqueName = Date.now() + "-" + file.originalname;
-    cb(null, uniqueName);
-  }
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed!"), false);
+    }
+  },
+});
 
 module.exports = upload;

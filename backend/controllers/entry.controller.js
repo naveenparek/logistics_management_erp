@@ -1,4 +1,5 @@
 const db = require("../config/db");
+const cloudinary = require("../config/cloudinary");
 
 // Staff editable fields (restricted for USER role)
 const STAFF_ALLOWED_FIELDS = [
@@ -9,7 +10,7 @@ const STAFF_ALLOWED_FIELDS = [
 
 /**
  * Create Entry Controller
- * Creates a new logistic entry with optional image upload
+ * Creates a new logistic entry with optional image upload to Cloudinary
  */
 exports.createEntry = (req, res) => {
   const userId = req.user.id;
@@ -55,7 +56,9 @@ exports.createEntry = (req, res) => {
     remarks
   } = req.body;
 
-  const imagePath = req.file ? req.file.filename : null;
+  // Get Cloudinary URL if file was uploaded
+  const imagePath = req.file ? req.file.path : null; // Cloudinary URL
+  const imagePublicId = req.file ? req.file.filename : null; // Cloudinary public_id for deletion
 
   // Basic validation
   if (!exporter_name || !invoice_no || !container_no || !transporter) {
@@ -72,11 +75,11 @@ exports.createEntry = (req, res) => {
       transport_charges, handling_charges_transport_bill,
       detention_charges, handling_charges_nk_yard,
       concor_freight_charges, concor_handling_charges,
-      gsp_fees, image_path, gsp_making_charges,
+      gsp_fees, image_path, cloudinary_public_id, gsp_making_charges,
       out_charges_handling, labour_charges,
       examination_charges, direct_stuffing_charges,
       ksl_invoice, remarks
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `;
 
   const values = [
@@ -112,7 +115,8 @@ exports.createEntry = (req, res) => {
     concor_freight_charges || 0,
     concor_handling_charges || 0,
     gsp_fees || 0,
-    imagePath,
+    imagePath, // Cloudinary URL
+    imagePublicId, // Cloudinary public_id
     gsp_making_charges || 0,
     out_charges_handling || 0,
     labour_charges || 0,
@@ -142,7 +146,8 @@ exports.createEntry = (req, res) => {
 
     res.json({
       message: "Entry created successfully",
-      entry_id: result.insertId
+      entry_id: result.insertId,
+      image_url: imagePath
     });
   });
 };
@@ -186,9 +191,7 @@ exports.getEntries = (req, res) => {
   });
 };
 
-
-// get single entry by id
-
+// get entry by id
 exports.getEntryById = (req, res) => {
   const entryId = req.params.id;
   let sql = "";
@@ -230,6 +233,7 @@ exports.getEntryById = (req, res) => {
 
 
 
+
 /**
  * Update Entry Controller
  * Updates an existing entry
@@ -242,6 +246,27 @@ exports.updateEntry = (req, res) => {
   const role = req.user.role;
 
   let updates = req.body;
+
+  // Handle image update if new file uploaded
+  if (req.file) {
+    updates.image_path = req.file.path; // New Cloudinary URL
+    updates.cloudinary_public_id = req.file.filename; // New public_id
+    
+    // Get old image public_id to delete from Cloudinary
+    const getOldImageSql = "SELECT cloudinary_public_id FROM logistic_entries WHERE id = ?";
+    db.query(getOldImageSql, [entryId], (err, results) => {
+      if (err) {
+        console.error("Get old image error:", err);
+      } else if (results.length > 0 && results[0].cloudinary_public_id) {
+        // Delete old image from Cloudinary
+        cloudinary.uploader.destroy(results[0].cloudinary_public_id, (error, result) => {
+          if (error) {
+            console.error("Cloudinary delete error:", error);
+          }
+        });
+      }
+    });
+  }
 
   if (role === "USER") {
     // Staff limited edit
@@ -296,7 +321,7 @@ exports.updateEntry = (req, res) => {
 
 /**
  * Delete Entry Controller
- * Deletes an entry (SUPER_ADMIN only)
+ * Deletes an entry and its Cloudinary image (SUPER_ADMIN only)
  */
 exports.deleteEntry = (req, res) => {
   const role = req.user.role;
@@ -307,8 +332,8 @@ exports.deleteEntry = (req, res) => {
 
   const entryId = req.params.id;
 
-  // Check entry exists
-  const checkSql = "SELECT id FROM logistic_entries WHERE id = ?";
+  // Check entry exists and get image public_id
+  const checkSql = "SELECT id, cloudinary_public_id FROM logistic_entries WHERE id = ?";
   db.query(checkSql, [entryId], (err, results) => {
     if (err) {
       console.error("Check entry error:", err);
@@ -319,7 +344,18 @@ exports.deleteEntry = (req, res) => {
       return res.status(404).json({ message: "Entry not found" });
     }
 
-    // Delete entry
+    const cloudinaryPublicId = results[0].cloudinary_public_id;
+
+    // Delete from Cloudinary if image exists
+    if (cloudinaryPublicId) {
+      cloudinary.uploader.destroy(cloudinaryPublicId, (error, result) => {
+        if (error) {
+          console.error("Cloudinary delete error:", error);
+        }
+      });
+    }
+
+    // Delete entry from database
     const deleteSql = "DELETE FROM logistic_entries WHERE id = ?";
 
     db.query(deleteSql, [entryId], (err) => {
